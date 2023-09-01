@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Write};
 
-use bathbot_cache::{Cache, CacheSerializer};
+use bathbot_cache::Cache;
 use bathbot_model::{
     rosu_v2::ranking::Rankings, OsekaiBadge, OsekaiMedal, OsekaiRanking, OsuStatsBestScores,
     OsuStatsBestTimeframe, OsuTrackerIdCount, OsuTrackerPpGroup, OsuTrackerStats, SnipeCountries,

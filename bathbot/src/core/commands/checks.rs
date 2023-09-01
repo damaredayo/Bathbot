@@ -1,12 +1,13 @@
 use std::fmt::Write;
 
-use bathbot_cache::{model::CachedArchive, Cache};
-use bathbot_model::twilight_model::{
-    channel::{PermissionOverwrite, PermissionOverwriteTypeRkyv},
-    guild::Member,
+use bathbot_cache::{
+    channel::ArchivedPermissionOverwrite,
+    member::CachedMember,
+    redlight::{rkyv_util::id::ArchivedId, CachedArchive},
+    Cache,
 };
 use eyre::{ContextCompat, Result};
-use rkyv::{with::DeserializeWith, Archived, Infallible};
+use rkyv::vec::ArchivedVec;
 use twilight_model::{
     channel::permission_overwrite::PermissionOverwriteType,
     guild::Permissions,
@@ -62,7 +63,11 @@ pub async fn check_authority(
         }
     };
 
-    if !member.roles().iter().any(|role| auth_roles.contains(role)) {
+    if !member
+        .roles
+        .iter()
+        .any(|&role| auth_roles.contains(&role.into()))
+    {
         let mut content = String::from(
             "You need either admin permissions or \
             any of these roles to use this command:\n",
@@ -121,13 +126,15 @@ pub async fn check_guild_permissions(
 
     let mut permissions = Permissions::empty();
 
-    for &role in member.roles().iter() {
-        if let Ok(Some(role)) = cache.role(guild, role).await {
-            if role.permissions.contains(Permissions::ADMINISTRATOR) {
+    for &role in member.roles.iter() {
+        if let Ok(Some(role)) = cache.role(role.into()).await {
+            let role_permissions = Permissions::from_bits_truncate(role.permissions);
+
+            if role_permissions.contains(Permissions::ADMINISTRATOR) {
                 return (Permissions::all(), RolesLookup::Found(member));
             }
 
-            permissions |= role.permissions;
+            permissions |= role_permissions;
         }
     }
 
@@ -146,7 +153,7 @@ pub async fn check_channel_permissions(
         return Permissions::all();
     }
 
-    if let Ok(Some(channel)) = cache.channel(Some(guild), channel).await {
+    if let Ok(Some(channel)) = cache.channel(channel).await {
         if let Some(permission_overwrites) = channel.permission_overwrites.as_ref() {
             let member = match roles {
                 RolesLookup::Found(roles) => Some(roles),
@@ -160,7 +167,7 @@ pub async fn check_channel_permissions(
                     user,
                     guild,
                     permission_overwrites,
-                    member.roles(),
+                    &member.roles,
                 )
             }
         }
@@ -173,8 +180,8 @@ fn text_channel_permissions(
     permissions: &mut Permissions,
     user: Id<UserMarker>,
     guild: Id<GuildMarker>,
-    permission_overwrites: &Archived<Box<[PermissionOverwrite]>>,
-    roles: &[Id<RoleMarker>],
+    permission_overwrites: &ArchivedVec<ArchivedPermissionOverwrite>,
+    roles: &[ArchivedId<RoleMarker>],
 ) {
     let mut everyone_allowed = Permissions::empty();
     let mut everyone_denied = Permissions::empty();
@@ -184,22 +191,22 @@ fn text_channel_permissions(
     let mut role_denied = Permissions::empty();
 
     for overwrite in permission_overwrites.iter() {
-        match PermissionOverwriteTypeRkyv::deserialize_with(&overwrite.kind, &mut Infallible)
-            .unwrap()
-        {
+        let overwrite_kind = PermissionOverwriteType::from(overwrite.kind);
+
+        match overwrite_kind {
             PermissionOverwriteType::Member => {
                 if overwrite.id.cast() == user {
-                    user_allowed |= overwrite.allow;
-                    user_denied |= overwrite.deny;
+                    user_allowed |= Permissions::from_bits_truncate(overwrite.allow);
+                    user_denied |= Permissions::from_bits_truncate(overwrite.deny);
                 }
             }
             PermissionOverwriteType::Role => {
                 if overwrite.id.cast() == guild {
-                    everyone_allowed |= overwrite.allow;
-                    everyone_denied |= overwrite.deny;
+                    everyone_allowed |= Permissions::from_bits_truncate(overwrite.allow);
+                    everyone_denied |= Permissions::from_bits_truncate(overwrite.deny);
                 } else if roles.contains(&overwrite.id.cast()) {
-                    role_allowed |= overwrite.allow;
-                    role_denied |= overwrite.deny;
+                    role_allowed |= Permissions::from_bits_truncate(overwrite.allow);
+                    role_denied |= Permissions::from_bits_truncate(overwrite.deny);
                 }
             }
             _ => {}
@@ -217,7 +224,7 @@ fn text_channel_permissions(
 }
 
 pub enum RolesLookup {
-    Found(CachedArchive<Member>),
+    Found(CachedArchive<CachedMember>),
     NotChecked,
     NotFound,
 }

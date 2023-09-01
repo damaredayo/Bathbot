@@ -3,9 +3,10 @@ use std::sync::Arc;
 use bathbot_macros::SlashCommand;
 use bathbot_model::{RankingKind, UserModeStatsColumn, UserStatsColumn, UserStatsKind};
 use bathbot_util::constants::GENERAL_ISSUE;
-use eyre::Result;
+use eyre::{Report, Result};
 use rosu_v2::prelude::GameMode;
 use twilight_interactions::command::{CommandModel, CreateCommand};
+use twilight_model::util::ImageHash;
 
 use crate::{
     active::{impls::RankingPagination, ActiveMessages},
@@ -105,12 +106,12 @@ async fn slash_serverleaderboard(ctx: Arc<Context>, mut command: InteractionComm
     let owner = command.user_id()?;
     let guild_id = command.guild_id.unwrap(); // command is only processed in guilds
 
-    let members: Vec<_> = match ctx.cache.members(guild_id).await {
-        Ok(members) => members.into_iter().map(|id| id as i64).collect(),
+    let members: Vec<_> = match ctx.cache.guild_member_ids(guild_id).await {
+        Ok(members) => members.into_iter().map(|id| id.get() as i64).collect(),
         Err(err) => {
             let _ = command.error(&ctx, GENERAL_ISSUE).await;
 
-            return Err(err);
+            return Err(Report::new(err));
         }
     };
 
@@ -120,7 +121,11 @@ async fn slash_serverleaderboard(ctx: Arc<Context>, mut command: InteractionComm
         .await
         .ok()
         .flatten()
-        .and_then(|guild| Some((guild.id, *guild.icon.as_ref()?)));
+        .and_then(|guild| {
+            let image_hash = guild.icon.as_ref().copied().map(ImageHash::from)?;
+
+            Some((guild.id.into(), image_hash))
+        });
 
     let author_name_fut = ctx.user_config().osu_name(owner);
 

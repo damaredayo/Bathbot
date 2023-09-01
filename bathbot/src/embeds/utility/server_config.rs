@@ -1,13 +1,12 @@
 use std::fmt::Write;
 
-use bathbot_cache::model::CachedArchive;
+use bathbot_cache::{guild::CachedGuild, redlight::CachedArchive};
 use bathbot_macros::EmbedData;
-use bathbot_model::twilight_model::guild::Guild;
 use bathbot_psql::model::configs::{
     GuildConfig, HideSolutions, ListSize, MinimizedPp, Retries, ScoreSize,
 };
 use bathbot_util::AuthorBuilder;
-use twilight_model::channel::message::embed::EmbedField;
+use twilight_model::{channel::message::embed::EmbedField, util::ImageHash};
 
 use super::config::create_field;
 
@@ -21,14 +20,18 @@ pub struct ServerConfigEmbed {
 }
 
 impl ServerConfigEmbed {
-    pub fn new(guild: CachedArchive<Guild>, config: GuildConfig, authorities: &[String]) -> Self {
+    pub fn new(
+        guild: CachedArchive<CachedGuild>,
+        config: GuildConfig,
+        authorities: &[String],
+    ) -> Self {
         let mut author = AuthorBuilder::new(guild.name.as_ref());
 
-        if let Some(hash) = guild.icon.as_ref() {
+        if let Some(hash) = guild.icon.as_ref().copied().map(ImageHash::from) {
             let url = format!(
                 "https://cdn.discordapp.com/icons/{}/{hash}.{}",
                 guild.id,
-                if hash.animated { "gif" } else { "webp" }
+                if hash.is_animated() { "gif" } else { "webp" }
             );
 
             author = author.icon_url(url);

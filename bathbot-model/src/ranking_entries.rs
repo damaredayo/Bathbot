@@ -3,11 +3,14 @@ use std::{collections::BTreeMap, fmt::Write, ops::RangeBounds};
 use bathbot_util::{datetime::HowLongAgoText, AuthorBuilder, FooterBuilder};
 use rosu_v2::prelude::{CountryCode, GameMode, Username};
 use time::OffsetDateTime;
-use twilight_model::id::{marker::GuildMarker, Id};
+use twilight_model::{
+    id::{marker::GuildMarker, Id},
+    util::ImageHash,
+};
 
 use crate::{
-    twilight_model::util::ImageHash, BgGameScore, HlGameScore, HlVersion, UserModeStatsColumn,
-    UserStatsColumn, UserStatsEntries, UserStatsEntry,
+    BgGameScore, HlGameScore, HlVersion, UserModeStatsColumn, UserStatsColumn, UserStatsEntries,
+    UserStatsEntry,
 };
 
 pub struct RankingEntry<V> {
@@ -401,7 +404,7 @@ impl RankingKind {
                 let mut author = AuthorBuilder::new(author_text);
 
                 if let Some((id, icon)) = guild_icon {
-                    let ext = if icon.animated { "gif" } else { "webp" };
+                    let ext = if icon.is_animated() { "gif" } else { "webp" };
                     let url = format!("https://cdn.discordapp.com/icons/{id}/{icon}.{ext}");
                     author = author.icon_url(url);
                 }

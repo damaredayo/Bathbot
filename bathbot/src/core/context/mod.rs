@@ -6,7 +6,6 @@ use std::{
 
 use bathbot_cache::Cache;
 use bathbot_client::Client as BathbotClient;
-use bathbot_model::twilight_model::id::IdRkyv;
 use bathbot_psql::{model::configs::GuildConfig, Database};
 use bathbot_util::IntHasher;
 use eyre::{Result, WrapErr};
@@ -135,7 +134,13 @@ impl Context {
             .await
             .wrap_err("Failed to create osu client")?;
 
-        let cache = Cache::new(&config.redis_host, config.redis_port, config.redis_db_idx)
+        let redis_url = format!(
+            "redis://{host}:{port}/{db}",
+            host = config.redis_host,
+            port = config.redis_port,
+            db = config.redis_db_idx
+        );
+        let cache = Cache::new(&redis_url)
             .await
             .wrap_err("Failed to create redis cache")?;
 
@@ -143,12 +148,18 @@ impl Context {
             .await
             .wrap_err("Failed to create context data")?;
 
-        let resume_data = cache.defrost().await.wrap_err("Failed to defrost cache")?;
+        let sessions = cache
+            .defrost_with_hasher::<IntHasher>(true)
+            .await
+            .wrap_err("Failed to defrost cache")?;
 
         let (stats, registry) = BotStats::new(osu.metrics());
 
-        if !resume_data.is_empty() {
-            stats.populate(&cache).await;
+        if sessions.is_some() {
+            stats
+                .populate(&cache)
+                .await
+                .wrap_err("Failed to populate cache")?;
         }
 
         let client_fut = BathbotClient::new(
@@ -178,7 +189,7 @@ impl Context {
 
         let clients = Clients::new(psql, osu, custom_client, ordr);
 
-        let shards = discord_gateway(config, &http, resume_data)
+        let shards = discord_gateway(config, &http, sessions)
             .await
             .wrap_err("Failed to create discord gateway shards")?;
 
@@ -249,7 +260,7 @@ impl Context {
     }
 
     pub async fn reshard(&self, shards: &mut Vec<Shard>) -> Result<()> {
-        *shards = discord_gateway(BotConfig::get(), &self.http, HashMap::default())
+        *shards = discord_gateway(BotConfig::get(), &self.http, None)
             .await
             .wrap_err("Failed to create new shards for resharding")?;
 
@@ -437,7 +448,7 @@ async fn discord_http(config: &BotConfig) -> Result<(Arc<Client>, Id<Application
 async fn discord_gateway(
     config: &BotConfig,
     http: &Client,
-    resume_data: HashMap<u64, Session, IntHasher>,
+    sessions: Option<HashMap<u64, Session, IntHasher>>,
 ) -> Result<Vec<Shard>> {
     let intents = Intents::GUILDS
         | Intents::GUILD_MEMBERS
@@ -484,8 +495,10 @@ async fn discord_gateway(
         .presence(presence)
         .build();
 
+    let sessions = sessions.unwrap_or_default();
+
     let config_callback =
-        |shard_id: ShardId, builder: ConfigBuilder| match resume_data.get(&shard_id.number()) {
+        |shard_id: ShardId, builder: ConfigBuilder| match sessions.get(&shard_id.number()) {
             Some(session) => builder.session(session.to_owned()).build(),
             None => builder.build(),
         };

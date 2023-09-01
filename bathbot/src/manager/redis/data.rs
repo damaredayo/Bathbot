@@ -1,4 +1,6 @@
-use bathbot_cache::model::CachedArchive;
+use std::ops::Deref;
+
+use bathbot_cache::redlight::CachedArchive;
 use rkyv::{Archive, Archived, Deserialize, Infallible};
 
 #[derive(Clone)]
@@ -21,7 +23,7 @@ where
     pub fn into_original(self) -> O {
         match self {
             RedisData::Original(data) => data,
-            RedisData::Archive(data) => data.deserialize(),
+            RedisData::Archive(data) => data.deref().deserialize(&mut Infallible).unwrap(),
         }
     }
 }

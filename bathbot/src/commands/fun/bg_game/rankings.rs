@@ -27,10 +27,10 @@ pub async fn leaderboard(ctx: Arc<Context>, msg: &Message, global: bool) -> Resu
     if let Some(guild) = guild.filter(|_| !global) {
         let members: HashSet<_, IntHasher> = ctx
             .cache
-            .members(guild)
+            .guild_member_ids(guild)
             .await?
             .into_iter()
-            .map(|id| id as i64)
+            .map(|id| id.get() as i64)
             .collect();
 
         scores.retain(|row| members.contains(&row.discord_id));

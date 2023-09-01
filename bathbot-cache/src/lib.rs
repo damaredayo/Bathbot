@@ -1,8 +1,13 @@
-pub use self::{cache::Cache, key::ToCacheKey, serializer::CacheSerializer};
-
-pub mod model;
-
-mod cache;
-mod key;
+mod config;
 mod serializer;
-mod util;
+
+pub mod channel;
+pub mod current_user;
+pub mod guild;
+pub mod member;
+pub mod role;
+pub mod user;
+
+pub use redlight;
+
+pub type Cache = redlight::RedisCache<config::Config>;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bathbot_util::{numbers::WithComma, EmbedBuilder, FooterBuilder, MessageBuilder};
-use eyre::Result;
+use eyre::{Result, WrapErr};
 
 use crate::{
     util::{interaction::InteractionCommand, InteractionCommandExt},
@@ -9,7 +9,33 @@ use crate::{
 };
 
 pub async fn cache(ctx: Arc<Context>, command: InteractionCommand) -> Result<()> {
-    let stats = ctx.cache.stats();
+    let mut stats = ctx.cache.stats();
+
+    // TODO: different api in redlight?
+    let guilds = stats
+        .guilds()
+        .await
+        .wrap_err("Failed to fetch guilds count")?;
+
+    let unavailable_guilds = stats
+        .unavailable_guilds()
+        .await
+        .wrap_err("Failed to fetch unavailable_guilds count")?;
+
+    let users = stats
+        .users()
+        .await
+        .wrap_err("Failed to fetch users count")?;
+
+    let roles = stats
+        .roles()
+        .await
+        .wrap_err("Failed to fetch roles count")?;
+
+    let channels = stats
+        .channels()
+        .await
+        .wrap_err("Failed to fetch channels count")?;
 
     let description = format!(
         "Guilds: {guilds}\n\
@@ -17,11 +43,11 @@ pub async fn cache(ctx: Arc<Context>, command: InteractionCommand) -> Result<()>
         Users: {users}\n\
         Roles: {roles}\n\
         Channels: {channels}",
-        guilds = WithComma::new(stats.guilds),
-        unavailable_guilds = WithComma::new(stats.unavailable_guilds),
-        users = WithComma::new(stats.users),
-        roles = WithComma::new(stats.roles),
-        channels = WithComma::new(stats.channels),
+        guilds = WithComma::new(guilds),
+        unavailable_guilds = WithComma::new(unavailable_guilds),
+        users = WithComma::new(users),
+        roles = WithComma::new(roles),
+        channels = WithComma::new(channels),
     );
 
     let embed = EmbedBuilder::new()

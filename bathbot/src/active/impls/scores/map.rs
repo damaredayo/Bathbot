@@ -4,7 +4,6 @@ use std::{
 };
 
 use bathbot_macros::PaginationBuilder;
-use bathbot_model::twilight_model::util::ImageHash;
 use bathbot_psql::model::osu::{DbScore, DbScoreBeatmap, DbScoreBeatmapset, DbScoreUser, DbScores};
 use bathbot_util::{
     constants::{MAP_THUMB_URL, OSU_BASE},
@@ -23,6 +22,7 @@ use twilight_model::{
         marker::{GuildMarker, UserMarker},
         Id,
     },
+    util::ImageHash,
 };
 
 use crate::{
@@ -56,8 +56,12 @@ impl IActiveMessage for ScoresMapPagination {
         let data = &self.scores;
 
         // verified in command that these are available
-        let Some((map_id, map)) = data.maps().next() else { unreachable!() };
-        let Some((mapset_id, mapset)) = data.mapsets().next() else { unreachable!() };
+        let Some((map_id, map)) = data.maps().next() else {
+            unreachable!()
+        };
+        let Some((mapset_id, mapset)) = data.mapsets().next() else {
+            unreachable!()
+        };
 
         let author_text = format!(
             "{artist} - {title} [{version}]",
@@ -69,7 +73,7 @@ impl IActiveMessage for ScoresMapPagination {
         let icon_url = match self.guild_icon {
             Some((id, icon)) => format!(
                 "https://cdn.discordapp.com/icons/{id}/{icon}.{ext}",
-                ext = if icon.animated { "gif" } else { "webp" }
+                ext = if icon.is_animated() { "gif" } else { "webp" }
             ),
             // FIXME: MAP_THUMB_URL endpoint is sometimes wrong, see issue #426
             None => format!("{MAP_THUMB_URL}{mapset_id}l.jpg"),

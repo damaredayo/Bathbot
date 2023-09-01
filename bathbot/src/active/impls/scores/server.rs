@@ -4,7 +4,6 @@ use std::{
 };
 
 use bathbot_macros::PaginationBuilder;
-use bathbot_model::twilight_model::util::ImageHash;
 use bathbot_psql::model::osu::{DbScore, DbScoreBeatmap, DbScoreBeatmapset, DbScoreUser, DbScores};
 use bathbot_util::{
     constants::OSU_BASE,
@@ -23,6 +22,7 @@ use twilight_model::{
         marker::{GuildMarker, UserMarker},
         Id,
     },
+    util::ImageHash,
 };
 
 use crate::{
@@ -89,7 +89,7 @@ impl IActiveMessage for ScoresServerPagination {
         let mut author = AuthorBuilder::new(author_text);
 
         if let Some((id, icon)) = self.guild_icon {
-            let ext = if icon.animated { "gif" } else { "webp" };
+            let ext = if icon.is_animated() { "gif" } else { "webp" };
             let url = format!("https://cdn.discordapp.com/icons/{id}/{icon}.{ext}");
             author = author.icon_url(url);
         }

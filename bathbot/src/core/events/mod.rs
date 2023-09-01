@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use bathbot_cache::model::CachedArchive;
+use bathbot_cache::redlight::CachedArchive;
 use bathbot_model::twilight_model::{channel::Channel, guild::Guild};
 use bathbot_util::constants::MISS_ANALYZER_ID;
 use eyre::Result;
@@ -83,14 +83,14 @@ impl EventLocation {
         A: Authored + Send + Sync,
     {
         let Some(guild_id) = orig.guild_id() else {
-            return Self::Private
+            return Self::Private;
         };
 
         let Ok(Some(guild)) = ctx.cache.guild(guild_id).await else {
-            return Self::UncachedGuild
+            return Self::UncachedGuild;
         };
 
-        let Ok(Some(channel)) = ctx.cache.channel(Some(guild_id), orig.channel_id()).await else {
+        let Ok(Some(channel)) = ctx.cache.channel(orig.channel_id()).await else {
             return Self::UncachedChannel { guild };
         };
 
@@ -126,7 +126,7 @@ pub async fn event_loop(ctx: Arc<Context>, shards: &mut Vec<Shard>) {
                 Some((shard, Ok(event))) => {
                     ctx.standby.process(&event);
                     let change = ctx.cache.update(&event).await;
-                    ctx.stats.process(&event, change);
+                    ctx.stats.process(&event);
                     let ctx = Arc::clone(&ctx);
                     let shard_id = shard.id().number();
 

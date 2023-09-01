@@ -1,4 +1,5 @@
-use bathbot_cache::{model::CacheChange, Cache};
+use bathbot_cache::Cache;
+use eyre::Result;
 use prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
 use time::OffsetDateTime;
 use twilight_gateway::Event;
@@ -200,16 +201,20 @@ impl BotStats {
         (stats, registry)
     }
 
-    pub async fn populate(&self, cache: &Cache) {
-        let stats = cache.stats();
+    pub async fn populate(&self, cache: &Cache) -> Result<()> {
+        let mut stats = cache.stats();
 
-        self.cache_counts.guilds.set(stats.guilds as i64);
+        self.cache_counts.guilds.set(stats.guilds().await? as i64);
         self.cache_counts
             .unavailable_guilds
-            .set(stats.unavailable_guilds as i64);
-        self.cache_counts.channels.set(stats.channels as i64);
-        self.cache_counts.users.set(stats.users as i64);
-        self.cache_counts.roles.set(stats.roles as i64);
+            .set(stats.unavailable_guilds().await? as i64);
+        self.cache_counts
+            .channels
+            .set(stats.channels().await? as i64);
+        self.cache_counts.users.set(stats.users().await? as i64);
+        self.cache_counts.roles.set(stats.roles().await? as i64);
+
+        Ok(())
     }
 
     pub fn increment_message_command(&self, cmd: &str) {
@@ -263,16 +268,8 @@ impl BotStats {
         self.osu_metrics.cs_diffs_cached.inc();
     }
 
-    pub fn process(&self, event: &Event, change: Option<CacheChange>) {
-        if let Some(change) = change {
-            self.cache_counts.channels.add(change.channels as i64);
-            self.cache_counts.guilds.add(change.guilds as i64);
-            self.cache_counts.roles.add(change.roles as i64);
-            self.cache_counts
-                .unavailable_guilds
-                .add(change.unavailable_guilds as i64);
-            self.cache_counts.users.add(change.users as i64);
-        }
+    pub fn process(&self, event: &Event) {
+        // TODO: consider cache metrics
 
         match event {
             Event::ChannelCreate(_) => self.event_counts.channel_create.inc(),

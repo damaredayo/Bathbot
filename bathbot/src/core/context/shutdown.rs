@@ -1,4 +1,5 @@
-use bathbot_model::twilight_model::id::IdRkyv;
+use std::time::Duration;
+
 use eyre::{Result, WrapErr};
 use futures::stream::StreamExt;
 use rkyv::{
@@ -35,9 +36,10 @@ impl Context {
             ordr.disconnect();
         }
 
-        let resume_data = Self::down_resumable(shards).await;
+        let sessions = Self::down_resumable(shards).await;
+        let expire = Duration::from_secs(180);
 
-        if let Err(err) = self.cache.freeze(&resume_data).await {
+        if let Err(err) = self.cache.freeze(&sessions, Some(expire)).await {
             error!(?err, "Failed to freeze cache");
         }
 

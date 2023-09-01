@@ -1,9 +1,14 @@
+use std::future::ready;
 use std::{fmt::Write, sync::Arc};
 
+use bathbot_cache::Cache;
 use bathbot_macros::command;
 use bathbot_psql::model::configs::{Authorities, GuildConfig};
 use bathbot_util::{constants::GENERAL_ISSUE, matcher, MessageBuilder};
+use eyre::Report;
 use eyre::Result;
+use futures::TryStreamExt;
+use twilight_model::id::marker::{GuildMarker, UserMarker};
 use twilight_model::{
     guild::Permissions,
     id::{marker::RoleMarker, Id},
@@ -80,12 +85,12 @@ pub async fn authorities(
         AuthorityCommandKind::List => "Current authority roles for this server: ".to_owned(),
         AuthorityCommandKind::Remove(role_id) => {
             let author_id = orig.user_id()?;
-            let roles = ctx
+            let auth_roles = ctx
                 .guild_config()
                 .peek(guild_id, |config| config.authorities.clone())
                 .await;
 
-            if roles.iter().all(|&id| id != role_id) {
+            if auth_roles.iter().all(|&id| id != role_id) {
                 let content = "The role was no authority role anyway";
                 let builder = MessageBuilder::new().embed(content);
                 orig.callback(&ctx, builder).await?;
@@ -101,23 +106,11 @@ pub async fn authorities(
                     .await?
                     .map_or(false, |guild| guild.owner_id == author_id))
             {
-                let member_fut = ctx.cache.member(guild_id, author_id);
+                let is_still_auth_fut =
+                    is_still_authority(&ctx.cache, guild_id, author_id, &auth_roles, Some(role_id));
 
-                let member_roles = match member_fut.await {
-                    Ok(Some(member)) => member.roles().to_vec(),
-                    Ok(None) => Vec::new(),
-                    Err(err) => {
-                        let _ = orig.error_callback(&ctx, GENERAL_ISSUE).await;
-
-                        return Err(err);
-                    }
-                };
-
-                let still_authority = match ctx.cache.roles(guild_id, member_roles).await {
-                    Ok(cached_roles) => cached_roles.into_iter().any(|role| {
-                        role.permissions.contains(Permissions::ADMINISTRATOR)
-                            || roles.iter().any(|&new| new == role.id && new != role_id)
-                    }),
+                let still_authority: bool = match is_still_auth_fut.await {
+                    Ok(still_authority) => still_authority,
                     Err(err) => {
                         let _ = orig.error_callback(&ctx, GENERAL_ISSUE).await;
 
@@ -143,7 +136,7 @@ pub async fn authorities(
 
             "Successfully removed authority role. Authority roles now are: ".to_owned()
         }
-        AuthorityCommandKind::Replace(roles) => {
+        AuthorityCommandKind::Replace(auth_roles) => {
             let author_id = orig.user_id()?;
 
             // Make sure the author is still an authority after applying new roles
@@ -154,23 +147,11 @@ pub async fn authorities(
                     .await?
                     .map_or(false, |guild| guild.owner_id == author_id))
             {
-                let member_fut = ctx.cache.member(guild_id, author_id);
+                let is_still_auth_fut =
+                    is_still_authority(&ctx.cache, guild_id, author_id, &auth_roles, None);
 
-                let member_roles = match member_fut.await {
-                    Ok(Some(member)) => member.roles().to_vec(),
-                    Ok(None) => Vec::new(),
-                    Err(err) => {
-                        let _ = orig.error_callback(&ctx, GENERAL_ISSUE).await;
-
-                        return Err(err);
-                    }
-                };
-
-                let still_authority = match ctx.cache.roles(guild_id, member_roles).await {
-                    Ok(cached_roles) => cached_roles.into_iter().any(|role| {
-                        role.permissions.contains(Permissions::ADMINISTRATOR)
-                            || roles.iter().any(|&new| new == role.id)
-                    }),
+                let still_authority: bool = match is_still_auth_fut.await {
+                    Ok(still_authority) => still_authority,
                     Err(err) => {
                         let _ = orig.error_callback(&ctx, GENERAL_ISSUE).await;
 
@@ -186,7 +167,8 @@ pub async fn authorities(
                 }
             }
 
-            let f = |config: &mut GuildConfig| config.authorities = roles.into_iter().collect();
+            let f =
+                |config: &mut GuildConfig| config.authorities = auth_roles.into_iter().collect();
 
             if let Err(err) = ctx.guild_config().update(guild_id, f).await {
                 let _ = orig.error_callback(&ctx, GENERAL_ISSUE).await;
@@ -251,4 +233,34 @@ impl AuthorityCommandKind {
 
         Ok(Self::Replace(roles))
     }
+}
+
+async fn is_still_authority(
+    cache: &Cache,
+    guild_id: Id<GuildMarker>,
+    member_id: Id<UserMarker>,
+    auth_roles: &[Id<RoleMarker>],
+    removed_role: Option<Id<RoleMarker>>,
+) -> Result<bool> {
+    let member_roles = match cache.member(guild_id, member_id).await? {
+        Some(member) => member.roles.to_vec(),
+        None => Vec::new(),
+    };
+
+    cache
+        .iter()
+        .guild_roles(guild_id)
+        .await?
+        .try_filter(|role| ready(member_roles.contains(&role.id)))
+        .try_fold(false, |mut still_auth, role| {
+            still_auth |= Permissions::from_bits_truncate(role.permissions)
+                .contains(Permissions::ADMINISTRATOR)
+                || auth_roles.iter().any(|&new| {
+                    new == role.id && removed_role.map_or(true, |removed| new != removed)
+                });
+
+            ready(Ok(still_auth))
+        })
+        .await
+        .map_err(Report::new)
 }
